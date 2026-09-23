@@ -1,6 +1,6 @@
 # STO CRM — сеть автомастерских
 
-Продукт: `BUSINESS.md` · Архитектура: `ARCHITECTURE.md` · Backend MVP: `backend/`
+Продукт: `BUSINESS.md` · Архитектура: `ARCHITECTURE.md` · Backend MVP: `backend/` · Frontend: `frontend/`
 
 ## Что есть
 
@@ -9,6 +9,7 @@
 - Auth прототипа: заголовок **`X-User-Id`** (без JWT)
 - Пересчёт сумм ЗН из items, ACL по ролям, state-machine статусов ЗН
 - Демо-данные поднимаются **миграцией** `002_seed_demo` (вместе с `alembic upgrade head`)
+- Frontend (Vite + React + TS): дашборд, ЗН, клиенты, задачи; `X-User-Id` + Vite proxy `/api`
 
 ## Требования
 
@@ -171,6 +172,22 @@ backend/
   .env.example
 ```
 
+---
+
+## 5. Frontend
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+- UI: http://localhost:5173  
+- В dev Vite проксирует `/api` → backend `:8000`  
+- Подробнее: `frontend/README.md`
+
+---
+
 ## Вне scope MVP
 
-JWT, склад, прайс, фото, дашборд-агрегации, фронтенд.
+JWT, склад, прайс, фото, дашборд-агрегации; на фронте — без дизайна (сырые таблицы).
