@@ -495,6 +495,17 @@ textarea {
   border-bottom: none;
 }
 
+.data-table tfoot td {
+  padding: 0.75rem 1rem;
+  border-top: 1px solid var(--border-strong);
+  background: var(--surface-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.data-table tfoot td.num {
+  text-align: right;
+}
+
 .data-table td.num,
 .data-table th.num {
   text-align: right;
@@ -631,19 +642,42 @@ textarea {
   border-bottom: 1px solid var(--border);
 }
 
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--space-4);
+}
+
+.form-grid--2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+@media (max-width: 720px) {
+  .form-grid--2 {
+    grid-template-columns: 1fr;
+  }
+}
+
 .field--wide {
   grid-column: 1 / -1;
 }
 
 .field--check {
-  justify-content: flex-end;
   flex-direction: row;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-3);
+  padding-top: 0.35rem;
 }
 
 .field--check > span {
-  order: 1;
+  order: 0;
+}
+
+.field--check input[type='checkbox'] {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--accent);
 }
 
 .input--num {
@@ -835,5 +869,87 @@ fieldset {
   .data-table th,
   .data-table td {
     padding: 0.55rem 0.65rem;
+  }
+}
+
+/* ——— KPI strip (director / branch_manager) ——— */
+
+.kpi-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.kpi-tile {
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.kpi-tile__label {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: inherit;
+  opacity: 0.78;
+}
+
+.kpi-tile__value {
+  margin: 0;
+  font-size: 1.45rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.kpi-tile__hint {
+  margin: 0;
+  font-size: 0.75rem;
+  opacity: 0.72;
+  line-height: 1.35;
+}
+
+.kpi-tile--revenue {
+  background: linear-gradient(145deg, #e2f1f4 0%, #d4ebef 100%);
+  border-color: #b5d5db;
+  color: #0f4a55;
+}
+
+.kpi-tile--avg {
+  background: linear-gradient(145deg, #eff8ff 0%, #dcebff 100%);
+  border-color: #b2ccf0;
+  color: #1849a9;
+}
+
+.kpi-tile--pipeline {
+  background: linear-gradient(145deg, #fffaeb 0%, #fef0c7 100%);
+  border-color: #f9db8d;
+  color: #93370d;
+}
+
+.kpi-tile--overdue {
+  background: linear-gradient(145deg, #fef3f2 0%, #fce4e2 100%);
+  border-color: #fecdca;
+  color: #912018;
+}
+
+@media (max-width: 960px) {
+  .kpi-strip {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .kpi-strip {
+    grid-template-columns: 1fr;
   }
 }

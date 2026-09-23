@@ -19,6 +19,11 @@ export function getMe(userId: number): Promise<User> {
   return apiJson<User>('/api/me', userId)
 }
 
+/** Все активные пользователи для переключателя ролей в шапке. */
+export function listDemoUsers(userId: number): Promise<User[]> {
+  return apiJson<User[]>('/api/demo/users', userId)
+}
+
 export function listBranches(userId: number): Promise<Branch[]> {
   return apiJson<Branch[]>('/api/branches', userId)
 }
@@ -90,12 +95,17 @@ export function createClient(
   })
 }
 
+export function getClient(userId: number, clientId: number): Promise<Client> {
+  return apiJson<Client>(`/api/clients/${clientId}`, userId)
+}
+
 export function listVehicles(
   userId: number,
-  opts?: { plate?: string; client_id?: number },
+  opts?: { plate?: string; client_id?: number; q?: string },
 ): Promise<Vehicle[]> {
   const params = new URLSearchParams()
-  if (opts?.plate?.trim()) params.set('plate', opts.plate.trim())
+  if (opts?.q?.trim()) params.set('q', opts.q.trim())
+  else if (opts?.plate?.trim()) params.set('plate', opts.plate.trim())
   if (opts?.client_id != null) params.set('client_id', String(opts.client_id))
   const qs = params.toString()
   return apiJson<Vehicle[]>(`/api/vehicles${qs ? `?${qs}` : ''}`, userId)
@@ -118,6 +128,10 @@ export function createVehicle(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
+}
+
+export function getVehicle(userId: number, vehicleId: number): Promise<Vehicle> {
+  return apiJson<Vehicle>(`/api/vehicles/${vehicleId}`, userId)
 }
 
 export function listWorkOrders(userId: number): Promise<WorkOrder[]> {

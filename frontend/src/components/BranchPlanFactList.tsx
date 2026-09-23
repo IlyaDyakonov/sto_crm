@@ -24,6 +24,7 @@ export function BranchPlanFactList({
 }: Props) {
   const { userId } = useUser()
   const rows = buildBranchFacts(branches, workOrders)
+  const totalFact = rows.reduce((sum, row) => sum + row.fact, 0)
   const [name, setName] = useState('')
   const [address, setAddress] = useState('')
   const [busy, setBusy] = useState(false)
@@ -112,6 +113,16 @@ export function BranchPlanFactList({
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              <tr className="data-table__total">
+                <td>
+                  <strong>Итого по сети</strong>
+                </td>
+                <td className="num">
+                  <strong>{formatMoney(totalFact)}</strong>
+                </td>
+              </tr>
+            </tfoot>
           </table>
           <p className="muted table-footnote">
             Факт: сумма ЗН со статусом {REVENUE_WORK_ORDER_STATUSES.join(' / ')}{' '}

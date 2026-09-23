@@ -1,8 +1,23 @@
-import { DEMO_USERS, useUser } from '../context/UserContext'
+import { demoUserLabel, useUser } from '../context/UserContext'
 import { roleBadgeClass, roleLabel } from '../lib/roles'
 
 export function Header() {
-  const { userId, setUserId, me, meLoading, meError } = useUser()
+  const {
+    userId,
+    setUserId,
+    me,
+    meLoading,
+    meError,
+    directory,
+    directoryLoading,
+  } = useUser()
+
+  const options =
+    directory.length > 0
+      ? directory
+      : me
+        ? [me]
+        : []
 
   return (
     <header className="app-header">
@@ -42,10 +57,11 @@ export function Header() {
             value={userId}
             onChange={(e) => setUserId(Number(e.target.value))}
             title="X-User-Id для API"
+            disabled={directoryLoading && options.length === 0}
           >
-            {DEMO_USERS.map((u) => (
+            {options.map((u) => (
               <option key={u.id} value={u.id}>
-                {u.label}
+                {demoUserLabel(u)}
               </option>
             ))}
           </select>

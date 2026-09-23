@@ -1,5 +1,5 @@
 import { useCallback, useState, type FormEvent } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Link, Navigate } from 'react-router-dom'
 import {
   createClient,
   createVehicle,
@@ -15,8 +15,10 @@ import { canSeeFinance, isWorker } from '../lib/roles'
 
 export function ClientsPage() {
   const { userId, me, meLoading } = useUser()
-  const [plateInput, setPlateInput] = useState('')
-  const [plateQuery, setPlateQuery] = useState('')
+  const [vehicleInput, setVehicleInput] = useState('')
+  const [vehicleQuery, setVehicleQuery] = useState('')
+  const [clientInput, setClientInput] = useState('')
+  const [clientQuery, setClientQuery] = useState('')
   const [formError, setFormError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -32,15 +34,21 @@ export function ClientsPage() {
   const [vehYear, setVehYear] = useState('')
   const [vehVin, setVehVin] = useState('')
 
-  const clientsFetcher = useCallback((uid: number) => listClients(uid), [])
-  const clients = useApiResource(clientsFetcher)
+  /** Полный список — для селекта «Новое авто» (не зависит от поиска). */
+  const allClients = useApiResource(listClients)
+
+  const clientsFetcher = useCallback(
+    (uid: number) => listClients(uid, clientQuery || undefined),
+    [clientQuery],
+  )
+  const clients = useApiResource(clientsFetcher, [clientQuery])
 
   const vehiclesFetcher = useCallback(
     (uid: number) =>
-      listVehicles(uid, plateQuery ? { plate: plateQuery } : undefined),
-    [plateQuery],
+      listVehicles(uid, vehicleQuery ? { q: vehicleQuery } : undefined),
+    [vehicleQuery],
   )
-  const vehicles = useApiResource(vehiclesFetcher, [plateQuery])
+  const vehicles = useApiResource(vehiclesFetcher, [vehicleQuery])
 
   if (!meLoading && isWorker(me?.role)) {
     return <Navigate to="/" replace />
@@ -48,14 +56,24 @@ export function ClientsPage() {
 
   const canManage = canSeeFinance(me?.role)
 
-  function onSearch(e: FormEvent) {
+  function onSearchVehicles(e: FormEvent) {
     e.preventDefault()
-    setPlateQuery(plateInput.trim())
+    setVehicleQuery(vehicleInput.trim())
   }
 
-  function onClear() {
-    setPlateInput('')
-    setPlateQuery('')
+  function onClearVehicles() {
+    setVehicleInput('')
+    setVehicleQuery('')
+  }
+
+  function onSearchClients(e: FormEvent) {
+    e.preventDefault()
+    setClientQuery(clientInput.trim())
+  }
+
+  function onClearClients() {
+    setClientInput('')
+    setClientQuery('')
   }
 
   async function onCreateClient(e: FormEvent) {
@@ -75,6 +93,7 @@ export function ClientsPage() {
       setClientEmail('')
       setClientType('person')
       clients.reload()
+      allClients.reload()
     } catch (err) {
       setFormError(formatApiError(err))
     } finally {
@@ -109,239 +128,292 @@ export function ClientsPage() {
     }
   }
 
-  const clientById = new Map((clients.data ?? []).map((c: Client) => [c.id, c]))
+  const clientById = new Map(
+    (allClients.data ?? []).map((c: Client) => [c.id, c]),
+  )
 
   return (
     <section className="page">
       <header className="page__header">
         <div className="page__title-block">
           <h1>Клиенты и авто</h1>
-          <p className="page__lead">Справочники и поиск авто по госномеру.</p>
+          <p className="page__lead">
+            Поиск клиентов по имени/телефону, авто по госномеру или клиенту.
+          </p>
         </div>
       </header>
 
       <div className="stack">
-      {canManage && (
-        <>
-          {formError && (
-            <p className="alert alert--error" role="alert">
-              {formError}
-            </p>
-          )}
+        {canManage && (
+          <>
+            {formError && (
+              <p className="alert alert--error" role="alert">
+                {formError}
+              </p>
+            )}
 
-          <div className="card">
-            <div className="section-head">
-              <h2>Новый клиент</h2>
-            </div>
-            <form className="form-grid" onSubmit={onCreateClient}>
-              <label className="field">
-                <span>Имя</span>
-                <input
-                  className="input"
-                  required
-                  value={clientName}
-                  onChange={(e) => setClientName(e.target.value)}
-                />
-              </label>
-              <label className="field">
-                <span>Телефон</span>
-                <input
-                  className="input mono"
-                  required
-                  value={clientPhone}
-                  onChange={(e) => setClientPhone(e.target.value)}
-                />
-              </label>
-              <label className="field">
-                <span>Email</span>
-                <input
-                  className="input"
-                  type="email"
-                  value={clientEmail}
-                  onChange={(e) => setClientEmail(e.target.value)}
-                />
-              </label>
-              <label className="field">
-                <span>Тип</span>
-                <select
-                  className="select"
-                  value={clientType}
-                  onChange={(e) => setClientType(e.target.value)}
-                >
-                  <option value="person">person</option>
-                  <option value="company">company</option>
-                </select>
-              </label>
-              <div className="field">
-                <span>&nbsp;</span>
-                <button className="btn" type="submit" disabled={busy}>
-                  Добавить клиента
-                </button>
+            <div className="card">
+              <div className="section-head">
+                <h2>Новый клиент</h2>
               </div>
-            </form>
-          </div>
-
-          <div className="card">
-            <div className="section-head">
-              <h2>Новое авто</h2>
+              <form className="form-grid" onSubmit={onCreateClient}>
+                <label className="field">
+                  <span>Имя</span>
+                  <input
+                    className="input"
+                    required
+                    value={clientName}
+                    onChange={(e) => setClientName(e.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  <span>Телефон</span>
+                  <input
+                    className="input mono"
+                    required
+                    value={clientPhone}
+                    onChange={(e) => setClientPhone(e.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  <span>Email</span>
+                  <input
+                    className="input"
+                    type="email"
+                    value={clientEmail}
+                    onChange={(e) => setClientEmail(e.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  <span>Тип</span>
+                  <select
+                    className="select"
+                    value={clientType}
+                    onChange={(e) => setClientType(e.target.value)}
+                  >
+                    <option value="person">person</option>
+                    <option value="company">company</option>
+                  </select>
+                </label>
+                <div className="field">
+                  <span>&nbsp;</span>
+                  <button className="btn" type="submit" disabled={busy}>
+                    Добавить клиента
+                  </button>
+                </div>
+              </form>
             </div>
-            <form className="form-grid" onSubmit={onCreateVehicle}>
-              <label className="field">
-                <span>Клиент</span>
-                <select
-                  className="select"
-                  required
-                  value={vehClientId === '' ? '' : String(vehClientId)}
-                  onChange={(e) =>
-                    setVehClientId(
-                      e.target.value === '' ? '' : Number(e.target.value),
-                    )
-                  }
-                >
-                  <option value="">— выбрать —</option>
-                  {(clients.data ?? []).map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} (#{c.id})
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="field">
-                <span>Госномер</span>
-                <input
-                  className="input mono"
-                  required
-                  value={vehPlate}
-                  onChange={(e) => setVehPlate(e.target.value)}
-                />
-              </label>
-              <label className="field">
-                <span>Марка</span>
-                <input
-                  className="input"
-                  required
-                  value={vehMake}
-                  onChange={(e) => setVehMake(e.target.value)}
-                />
-              </label>
-              <label className="field">
-                <span>Модель</span>
-                <input
-                  className="input"
-                  required
-                  value={vehModel}
-                  onChange={(e) => setVehModel(e.target.value)}
-                />
-              </label>
-              <label className="field">
-                <span>Год</span>
-                <input
-                  className="input"
-                  type="number"
-                  value={vehYear}
-                  onChange={(e) => setVehYear(e.target.value)}
-                />
-              </label>
-              <label className="field">
-                <span>VIN</span>
-                <input
-                  className="input mono"
-                  value={vehVin}
-                  onChange={(e) => setVehVin(e.target.value)}
-                />
-              </label>
-              <div className="field">
-                <span>&nbsp;</span>
-                <button className="btn" type="submit" disabled={busy}>
-                  Добавить авто
-                </button>
+
+            <div className="card">
+              <div className="section-head">
+                <h2>Новое авто</h2>
               </div>
-            </form>
+              <form className="form-grid" onSubmit={onCreateVehicle}>
+                <label className="field">
+                  <span>Клиент</span>
+                  <select
+                    className="select"
+                    required
+                    value={vehClientId === '' ? '' : String(vehClientId)}
+                    onChange={(e) =>
+                      setVehClientId(
+                        e.target.value === '' ? '' : Number(e.target.value),
+                      )
+                    }
+                  >
+                    <option value="">— выбрать —</option>
+                    {(allClients.data ?? []).map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} (#{c.id})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Госномер</span>
+                  <input
+                    className="input mono"
+                    required
+                    value={vehPlate}
+                    onChange={(e) => setVehPlate(e.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  <span>Марка</span>
+                  <input
+                    className="input"
+                    required
+                    value={vehMake}
+                    onChange={(e) => setVehMake(e.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  <span>Модель</span>
+                  <input
+                    className="input"
+                    required
+                    value={vehModel}
+                    onChange={(e) => setVehModel(e.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  <span>Год</span>
+                  <input
+                    className="input"
+                    type="number"
+                    value={vehYear}
+                    onChange={(e) => setVehYear(e.target.value)}
+                  />
+                </label>
+                <label className="field">
+                  <span>VIN</span>
+                  <input
+                    className="input mono"
+                    value={vehVin}
+                    onChange={(e) => setVehVin(e.target.value)}
+                  />
+                </label>
+                <div className="field">
+                  <span>&nbsp;</span>
+                  <button className="btn" type="submit" disabled={busy}>
+                    Добавить авто
+                  </button>
+                </div>
+              </form>
+            </div>
+          </>
+        )}
+
+        <div className="card">
+          <div className="section-head">
+            <h2>Поиск авто</h2>
           </div>
-        </>
-      )}
-
-      <div className="card">
-        <div className="section-head">
-          <h2>Поиск по госномеру</h2>
+          <form className="form-row" onSubmit={onSearchVehicles}>
+            <input
+              className="input input--grow"
+              type="search"
+              placeholder="Госномер, имя или телефон клиента"
+              value={vehicleInput}
+              onChange={(e) => setVehicleInput(e.target.value)}
+              aria-label="Поиск авто"
+            />
+            <button className="btn" type="submit">
+              Найти
+            </button>
+            <button
+              className="btn btn--secondary"
+              type="button"
+              onClick={onClearVehicles}
+            >
+              Сбросить
+            </button>
+          </form>
         </div>
-        <form className="form-row" onSubmit={onSearch}>
-          <input
-            className="input input--grow mono"
-            type="search"
-            placeholder="А123ВС777"
-            value={plateInput}
-            onChange={(e) => setPlateInput(e.target.value)}
-            aria-label="Госномер"
-          />
-          <button className="btn" type="submit">
-            Найти
-          </button>
-          <button className="btn btn--secondary" type="button" onClick={onClear}>
-            Сбросить
-          </button>
-        </form>
-      </div>
 
-      <div className="card card--flush">
-        <div className="card__header">
-          <h2 className="card__title">
-            Автомобили
-            {plateQuery ? (
-              <span className="muted"> · «{plateQuery}»</span>
-            ) : null}
-          </h2>
+        <div className="card card--flush">
+          <div className="card__header">
+            <h2 className="card__title">
+              Автомобили
+              {vehicleQuery ? (
+                <span className="muted"> · «{vehicleQuery}»</span>
+              ) : null}
+            </h2>
+          </div>
+          <StatusBlock
+            loading={vehicles.loading}
+            error={vehicles.error}
+            empty={!vehicles.data?.length}
+            emptyText={
+              vehicleQuery
+                ? 'Ничего не найдено по запросу'
+                : 'Автомобилей нет'
+            }
+          >
+            <VehicleTable items={vehicles.data ?? []} clientById={clientById} />
+          </StatusBlock>
         </div>
-        <StatusBlock
-          loading={vehicles.loading}
-          error={vehicles.error}
-          empty={!vehicles.data?.length}
-          emptyText={
-            plateQuery ? 'Ничего не найдено по госномеру' : 'Автомобилей нет'
-          }
-        >
-          <VehicleTable items={vehicles.data ?? []} clientById={clientById} />
-        </StatusBlock>
-      </div>
 
-      <div className="card card--flush">
-        <div className="card__header">
-          <h2 className="card__title">Клиенты</h2>
+        <div className="card">
+          <div className="section-head">
+            <h2>Поиск клиентов</h2>
+          </div>
+          <form className="form-row" onSubmit={onSearchClients}>
+            <input
+              className="input input--grow"
+              type="search"
+              placeholder="Имя или телефон"
+              value={clientInput}
+              onChange={(e) => setClientInput(e.target.value)}
+              aria-label="Поиск клиентов"
+            />
+            <button className="btn" type="submit">
+              Найти
+            </button>
+            <button
+              className="btn btn--secondary"
+              type="button"
+              onClick={onClearClients}
+            >
+              Сбросить
+            </button>
+          </form>
         </div>
-        <StatusBlock
-          loading={clients.loading}
-          error={clients.error}
-          empty={!clients.data?.length}
-          emptyText="Клиентов нет"
-        >
-          <div className="table-wrap">
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th>ID</th>
-                  <th>Имя</th>
-                  <th>Телефон</th>
-                  <th>Email</th>
-                  <th>Тип</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(clients.data ?? []).map((c) => (
-                  <tr key={c.id}>
-                    <td className="mono">{c.id}</td>
-                    <td>{c.name}</td>
-                    <td className="mono">{c.phone}</td>
-                    <td>{c.email ?? '—'}</td>
-                    <td>
-                      <span className="badge badge--neutral">{c.client_type}</span>
-                    </td>
+
+        <div className="card card--flush">
+          <div className="card__header">
+            <h2 className="card__title">
+              Клиенты
+              {clientQuery ? (
+                <span className="muted"> · «{clientQuery}»</span>
+              ) : null}
+            </h2>
+          </div>
+          <StatusBlock
+            loading={clients.loading}
+            error={clients.error}
+            empty={!clients.data?.length}
+            emptyText={
+              clientQuery ? 'Ничего не найдено по запросу' : 'Клиентов нет'
+            }
+          >
+            <div className="table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Имя</th>
+                    <th>Телефон</th>
+                    <th>Email</th>
+                    <th>Тип</th>
+                    <th></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </StatusBlock>
-      </div>
+                </thead>
+                <tbody>
+                  {(clients.data ?? []).map((c) => (
+                    <tr key={c.id}>
+                      <td className="mono">{c.id}</td>
+                      <td>
+                        <Link to={`/clients/${c.id}`}>{c.name}</Link>
+                      </td>
+                      <td className="mono">{c.phone}</td>
+                      <td>{c.email ?? '—'}</td>
+                      <td>
+                        <span className="badge badge--neutral">
+                          {c.client_type}
+                        </span>
+                      </td>
+                      <td>
+                        <Link className="row-link" to={`/clients/${c.id}`}>
+                          Открыть
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </StatusBlock>
+        </div>
       </div>
     </section>
   )
@@ -364,6 +436,7 @@ function VehicleTable({
             <th>Год</th>
             <th>Клиент</th>
             <th>VIN</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
@@ -372,7 +445,9 @@ function VehicleTable({
             return (
               <tr key={v.id}>
                 <td className="mono">
-                  <strong>{v.plate_number}</strong>
+                  <Link to={`/clients/${v.client_id}/vehicles/${v.id}`}>
+                    <strong>{v.plate_number}</strong>
+                  </Link>
                 </td>
                 <td>
                   {v.make} {v.model}
@@ -381,7 +456,7 @@ function VehicleTable({
                 <td>
                   {client ? (
                     <>
-                      {client.name}{' '}
+                      <Link to={`/clients/${client.id}`}>{client.name}</Link>{' '}
                       <span className="muted">#{client.id}</span>
                     </>
                   ) : (
@@ -389,6 +464,14 @@ function VehicleTable({
                   )}
                 </td>
                 <td className="mono">{v.vin ?? '—'}</td>
+                <td>
+                  <Link
+                    className="row-link"
+                    to={`/clients/${v.client_id}/vehicles/${v.id}`}
+                  >
+                    ЗН
+                  </Link>
+                </td>
               </tr>
             )
           })}

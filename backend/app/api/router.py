@@ -187,6 +187,20 @@ def me(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+@router.get("/demo/users", response_model=list[UserRead])
+def list_demo_users(
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[User]:
+    """Все активные пользователи для переключателя ролей в шапке (демо)."""
+    _ = user
+    return list(
+        db.scalars(
+            select(User).where(User.is_active.is_(True)).order_by(User.id)
+        ).all()
+    )
+
+
 # ---------- branches ----------
 
 @router.get("/branches")
@@ -330,12 +344,22 @@ def get_client(
 def list_vehicles(
     plate: str | None = None,
     client_id: int | None = None,
+    q: str | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[Vehicle]:
     stmt = select(Vehicle).order_by(Vehicle.id)
-    if plate:
-        stmt = stmt.where(Vehicle.plate_number.ilike(f"%{plate}%"))
+    # q: госномер или клиент (имя / телефон); plate — узкий алиас под старый UI
+    search = (q or plate or "").strip()
+    if search:
+        like = f"%{search}%"
+        stmt = stmt.join(Client, Client.id == Vehicle.client_id).where(
+            or_(
+                Vehicle.plate_number.ilike(like),
+                Client.name.ilike(like),
+                Client.phone.ilike(like),
+            )
+        )
     if client_id:
         stmt = stmt.where(Vehicle.client_id == client_id)
     return list(db.scalars(stmt).all())

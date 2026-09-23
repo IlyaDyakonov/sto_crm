@@ -7,21 +7,16 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { getMe } from '../api/endpoints'
+import { getMe, listDemoUsers } from '../api/endpoints'
 import { formatApiError } from '../api/errors'
 import type { User } from '../api/types'
+import { roleLabel } from '../lib/roles'
 
-/** Демо-пользователи из seed (см. корневой README). */
-export const DEMO_USERS = [
-  { id: 1, label: '1 — director@sto.local (директор)' },
-  { id: 2, label: '2 — manager.lenina@sto.local (руководитель)' },
-  { id: 3, label: '3 — manager.south@sto.local (руководитель)' },
-  { id: 4, label: '4 — worker.suspension@sto.local (рабочий)' },
-  { id: 5, label: '5 — worker.paint@sto.local (рабочий)' },
-  { id: 6, label: '6 — worker.south@sto.local (рабочий)' },
-] as const
+const DEFAULT_USER_ID = 1
 
-const DEFAULT_USER_ID: number = DEMO_USERS[0].id
+export function demoUserLabel(user: User): string {
+  return `${user.id} — ${user.email} (${roleLabel(user.role)})`
+}
 
 type UserContextValue = {
   userId: number
@@ -29,6 +24,10 @@ type UserContextValue = {
   me: User | null
   meLoading: boolean
   meError: string | null
+  /** Пользователи для select «Роль» в шапке (включая новых). */
+  directory: User[]
+  directoryLoading: boolean
+  reloadDirectory: () => void
 }
 
 const UserContext = createContext<UserContextValue | null>(null)
@@ -38,10 +37,35 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [me, setMe] = useState<User | null>(null)
   const [meLoading, setMeLoading] = useState(true)
   const [meError, setMeError] = useState<string | null>(null)
+  const [directory, setDirectory] = useState<User[]>([])
+  const [directoryLoading, setDirectoryLoading] = useState(true)
+  const [directoryTick, setDirectoryTick] = useState(0)
 
   const setUserId = useCallback((id: number) => {
     setUserIdState(id)
   }, [])
+
+  const reloadDirectory = useCallback(() => {
+    setDirectoryTick((n) => n + 1)
+  }, [])
+
+  useEffect(() => {
+    let cancelled = false
+    setDirectoryLoading(true)
+    listDemoUsers(userId)
+      .then((users) => {
+        if (!cancelled) setDirectory(users)
+      })
+      .catch(() => {
+        if (!cancelled) setDirectory([])
+      })
+      .finally(() => {
+        if (!cancelled) setDirectoryLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [directoryTick, userId])
 
   useEffect(() => {
     let cancelled = false
@@ -72,8 +96,26 @@ export function UserProvider({ children }: { children: ReactNode }) {
   }, [userId])
 
   const value = useMemo(
-    () => ({ userId, setUserId, me, meLoading, meError }),
-    [userId, setUserId, me, meLoading, meError],
+    () => ({
+      userId,
+      setUserId,
+      me,
+      meLoading,
+      meError,
+      directory,
+      directoryLoading,
+      reloadDirectory,
+    }),
+    [
+      userId,
+      setUserId,
+      me,
+      meLoading,
+      meError,
+      directory,
+      directoryLoading,
+      reloadDirectory,
+    ],
   )
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>

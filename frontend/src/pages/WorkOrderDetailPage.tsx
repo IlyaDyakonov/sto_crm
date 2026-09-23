@@ -23,7 +23,6 @@ import { StatusBlock } from '../components/StatusBlock'
 import { useUser } from '../context/UserContext'
 import { useApiResource } from '../hooks/useApiResource'
 import {
-  itemAssigneeLabel,
   woAssigneeLabel,
   woBranchLabel,
   woClientLabel,
@@ -390,7 +389,7 @@ export function WorkOrderDetailPage() {
                   <div className="section-head">
                     <h2>Основные данные</h2>
                   </div>
-                  <div className="form-grid">
+                  <div className="form-grid form-grid--2">
                     <label className="field">
                       <span>Филиал</span>
                       {role === 'branch_manager' ? (
@@ -534,8 +533,7 @@ export function WorkOrderDetailPage() {
                       </select>
                     </label>
 
-                    <label className="field field--check">
-                      <span>Гарантия</span>
+                    <label className="field field--wide field--check">
                       <input
                         type="checkbox"
                         checked={form.is_warranty}
@@ -543,6 +541,7 @@ export function WorkOrderDetailPage() {
                           patchForm({ is_warranty: e.target.checked })
                         }
                       />
+                      <span>Гарантия</span>
                     </label>
 
                     <label className="field field--wide">
@@ -868,7 +867,6 @@ function ReadonlyWorkOrder({
                   <th className="num">Кол-во</th>
                   {showMoney && <th className="num">Цена</th>}
                   {showMoney && <th className="num">Сумма</th>}
-                  <th>Исполнитель</th>
                   <th>Статус</th>
                 </tr>
               </thead>
@@ -897,7 +895,6 @@ function ReadonlyWorkOrder({
                       {showMoney && (
                         <td className="num">{formatMoney(item.amount)}</td>
                       )}
-                      <td>{itemAssigneeLabel(item)}</td>
                       <td>
                         {editable ? (
                           <select

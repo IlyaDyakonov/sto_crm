@@ -22,7 +22,7 @@ export function StaffRoster({
   onCreated,
   emptyText = 'Нет сотрудников',
 }: Props) {
-  const { userId } = useUser()
+  const { userId, reloadDirectory } = useUser()
   const branchName = useMemo(() => {
     const map = new Map<number, string>()
     for (const b of branches) map.set(b.id, b.name)
@@ -56,6 +56,7 @@ export function StaffRoster({
       setEmail('')
       setRole('worker')
       setBranchId('')
+      reloadDirectory()
       onCreated?.()
     } catch (err) {
       setError(formatApiError(err))

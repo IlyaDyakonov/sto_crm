@@ -7,6 +7,7 @@ import {
   listWorkOrders,
 } from '../api/endpoints'
 import { BranchPlanFactList } from '../components/BranchPlanFactList'
+import { RevenueKpiStrip } from '../components/RevenueKpiStrip'
 import { StaffRoster } from '../components/StaffRoster'
 import { StatusBlock } from '../components/StatusBlock'
 import { TaskList } from '../components/TaskList'
@@ -80,17 +81,24 @@ export function DashboardPage() {
           )}
 
           {showFinance && (
-            <div className="card card--flush">
-              <div className="card__header">
-                <h2 className="card__title">Филиалы — выручка (факт)</h2>
-              </div>
-              <BranchPlanFactList
-                branches={branches.data ?? []}
+            <>
+              <RevenueKpiStrip
                 workOrders={workOrders.data ?? []}
-                canCreate={isDirector}
-                onCreated={branches.reload}
+                role={me?.role}
               />
-            </div>
+
+              <div className="card card--flush">
+                <div className="card__header">
+                  <h2 className="card__title">Филиалы — выручка (факт)</h2>
+                </div>
+                <BranchPlanFactList
+                  branches={branches.data ?? []}
+                  workOrders={workOrders.data ?? []}
+                  canCreate={isDirector}
+                  onCreated={branches.reload}
+                />
+              </div>
+            </>
           )}
 
           <div className="card card--flush">
