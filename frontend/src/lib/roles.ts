@@ -70,6 +70,19 @@ export const WO_STATUS_LABELS: Record<WorkOrderStatus, string> = {
   cancelled: 'Отменён',
 }
 
+/** Порядок колонок канбана / этапов воронки ЗН. */
+export const WO_STATUS_ORDER: readonly WorkOrderStatus[] = [
+  'created',
+  'assigned',
+  'waiting_parts',
+  'in_progress',
+  'work_completed',
+  'ready_for_pickup',
+  'delivered',
+  'closed',
+  'cancelled',
+] as const
+
 export function nextWorkOrderStatuses(current: WorkOrderStatus): WorkOrderStatus[] {
   return WO_TRANSITIONS[current] ?? []
 }

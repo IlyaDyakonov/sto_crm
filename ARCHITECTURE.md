@@ -80,16 +80,13 @@ user_role: director | branch_manager | worker
 
 ## 5. Воронка 2.1 → таблицы
 
-| # | Этап BUSINESS | Где в БД |
-|---|----------------|----------|
-| 0 | Лид / касание | `touches` |
+| # | Этап BUSINESS §2.1 | Где в БД |
+|---|--------------------|----------|
+| 0 | Касание | `touches` |
 | 1 | Запись | `appointments` |
-| 2 | Визит / приёмка | `visits` (`status`: arrived / waiting_intake / accepted / no_show…) |
-| 3 | Диагностика | `visits` + поля сметы / `visit_stage = diagnosis` |
-| 4 | Согласование | `visits.approval_status` или этап `approval` |
-| 5–7 | ЗН → в работе → готов | `work_orders` + `work_order_items` |
-| 8 | Выдача + оплата | `work_orders` (`delivered`/`closed`) + `payments` |
-| 9 | Постсервис | `tasks` (ТО, отзыв, перезвон) → новое `touch` / `appointment` |
+| 2–5 | Приёмка → диагностика → согласование → done_for_wo | `visits.stage` / `visits.status` / `approval_status` |
+| 6–12 | ЗН created…closed | `work_orders` + `work_order_items` + `payments` |
+| 13 | Постсервис | `tasks` → новое `touch` / `appointment` |
 
 Отмена/отказ: `visits.lost_reason` / `work_orders.status = cancelled` + `cancel_reason`.
 
@@ -198,7 +195,7 @@ Unique lite: `(plate_number)` или `(plate_number, client_id)` — решит�
 | rescheduled_from_id | bigint FK null | перенос |
 | created_by | bigint FK | |
 
-### 7.7. `visits` — этапы 2–4
+### 7.7. `visits` — этапы 2–5 (приёмка → диагностика → согласование → done_for_wo)
 
 | Поле | Тип | Описание |
 |------|-----|----------|
@@ -219,7 +216,7 @@ Unique lite: `(plate_number)` или `(plate_number, client_id)` — решит�
 
 После `approved` можно создать **один или несколько** `work_orders` на этот визит (например: ЗН «подвеска», ЗН «окраска»).
 
-### 7.8. `work_orders` — этапы 5–8 (ось правды)
+### 7.8. `work_orders` — этапы 6–12 (ось правды)
 
 | Поле | Тип | Описание |
 |------|-----|----------|
@@ -276,7 +273,7 @@ total_amount = total_labor_amount + total_parts_amount
 
 Руководитель: `PATCH` item → `assignee_id` + `status=assigned`; при необходимости поднимает шапку ЗН в `assigned`. После изменения qty/price/type — пересчёт кэша на ЗН.
 
-### 7.10. `payments` — этап 8 (касса)
+### 7.10. `payments` — этап 11–12 (касса при выдаче / закрытии)
 
 | Поле | Тип | Описание |
 |------|-----|----------|
@@ -291,7 +288,7 @@ total_amount = total_labor_amount + total_parts_amount
 
 Долг клиента: `work_orders.total_amount - sum(payments)` (view или поле в API).
 
-### 7.11. `tasks` — этап 9 + операционные касания
+### 7.11. `tasks` — этап 13 + операционные касания
 
 | Поле | Тип | Описание |
 |------|-----|----------|
@@ -391,7 +388,7 @@ total_amount = total_labor_amount + total_parts_amount
 
 ### Имеет смысл упростить в MVP UI
 
-- Не строить все 10 этапов воронки отдельными экранами: канбан по укрупнённым колонкам (Запись / Визит / ЗН в работе / Готов / Постсервис) + деталка сущности.
+- Не строить все этапы воронки §2.1 отдельными экранами: канбан по укрупнённым колонкам (Запись / Визит / ЗН в работе / Готов / Постсервис) + деталка сущности.
 - Walk-in: создавать `visit` без `appointment` — поле уже nullable.
 - Выдача визита: статус визита «закрыт по сервису», когда **все** связанные ЗН в `delivered`/`closed` (логика в сервисе, не отдельная таблица).
 
