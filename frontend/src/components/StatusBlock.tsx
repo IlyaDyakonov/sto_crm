@@ -17,13 +17,17 @@ export function StatusBlock({
   children,
 }: StatusBlockProps) {
   if (loading) {
-    return <p>Загрузка…</p>
+    return <p className="state-msg">Загрузка…</p>
   }
   if (error) {
-    return <p>Ошибка: {error}</p>
+    return (
+      <p className="state-msg state-msg--error" role="alert">
+        Ошибка: {error}
+      </p>
+    )
   }
   if (empty) {
-    return <p>{emptyText}</p>
+    return <p className="empty-hint">{emptyText}</p>
   }
   return <>{children}</>
 }

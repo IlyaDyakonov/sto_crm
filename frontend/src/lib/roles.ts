@@ -1,5 +1,23 @@
 import type { User, UserRole, WorkOrderStatus } from '../api/types'
 
+export const ROLE_LABELS: Record<UserRole, string> = {
+  director: 'Директор',
+  branch_manager: 'Руководитель',
+  worker: 'Рабочий',
+}
+
+export function roleLabel(role: UserRole | null | undefined): string {
+  if (!role) return '—'
+  return ROLE_LABELS[role] ?? role
+}
+
+export function roleBadgeClass(role: UserRole | null | undefined): string {
+  if (role === 'director') return 'badge badge--role-director'
+  if (role === 'branch_manager') return 'badge badge--role-manager'
+  if (role === 'worker') return 'badge badge--role-worker'
+  return 'badge badge--neutral'
+}
+
 export function isWorker(role: UserRole | null | undefined): boolean {
   return role === 'worker'
 }

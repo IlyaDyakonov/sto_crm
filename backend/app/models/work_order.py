@@ -76,6 +76,12 @@ class WorkOrder(Base, TimestampMixin):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     visit: Mapped["Visit | None"] = relationship(back_populates="work_orders")
+    branch: Mapped["Branch"] = relationship()
+    client: Mapped["Client"] = relationship()
+    vehicle: Mapped["Vehicle"] = relationship()
+    primary_assignee: Mapped["User | None"] = relationship(
+        foreign_keys=[primary_assignee_id]
+    )
     items: Mapped[list["WorkOrderItem"]] = relationship(
         back_populates="work_order", cascade="all, delete-orphan"
     )
@@ -118,6 +124,7 @@ class WorkOrderItem(Base, TimestampMixin):
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
     work_order: Mapped["WorkOrder"] = relationship(back_populates="items")
+    assignee: Mapped["User | None"] = relationship(foreign_keys=[assignee_id])
 
 
 class WorkOrderStatusHistory(Base):

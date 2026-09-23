@@ -66,6 +66,17 @@ router = APIRouter()
 
 # ---------- helpers ----------
 
+def _wo_eager_options():
+    """selectinload for WO brief nests + items.assignee."""
+    return (
+        selectinload(WorkOrder.branch),
+        selectinload(WorkOrder.client),
+        selectinload(WorkOrder.vehicle),
+        selectinload(WorkOrder.primary_assignee),
+        selectinload(WorkOrder.items).selectinload(WorkOrderItem.assignee),
+    )
+
+
 def _wo_to_read(wo: WorkOrder, user: User) -> dict:
     data = WorkOrderRead.model_validate(wo).model_dump()
     return strip_finance_fields(data, user)
@@ -74,6 +85,22 @@ def _wo_to_read(wo: WorkOrder, user: User) -> dict:
 def _item_to_read(item: WorkOrderItem, user: User) -> dict:
     data = WorkOrderItemRead.model_validate(item).model_dump()
     return strip_finance_fields(data, user)
+
+
+def _load_work_order(db: Session, work_order_id: int) -> WorkOrder | None:
+    return db.scalars(
+        select(WorkOrder)
+        .where(WorkOrder.id == work_order_id)
+        .options(*_wo_eager_options())
+    ).first()
+
+
+def _load_work_order_item(db: Session, item_id: int) -> WorkOrderItem | None:
+    return db.scalars(
+        select(WorkOrderItem)
+        .where(WorkOrderItem.id == item_id)
+        .options(selectinload(WorkOrderItem.assignee))
+    ).first()
 
 
 def _visit_to_read(visit: Visit, user: User) -> dict:
@@ -402,7 +429,7 @@ def list_visit_work_orders(
     stmt = (
         select(WorkOrder)
         .where(WorkOrder.visit_id == visit_id)
-        .options(selectinload(WorkOrder.items))
+        .options(*_wo_eager_options())
         .order_by(WorkOrder.id)
     )
     rows = db.scalars(stmt).all()
@@ -424,7 +451,7 @@ def list_work_orders(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[dict]:
-    stmt = select(WorkOrder).options(selectinload(WorkOrder.items)).order_by(WorkOrder.id.desc())
+    stmt = select(WorkOrder).options(*_wo_eager_options()).order_by(WorkOrder.id.desc())
     if user.role == UserRole.DIRECTOR:
         if branch_id:
             stmt = stmt.where(WorkOrder.branch_id == branch_id)
@@ -470,11 +497,8 @@ def create_work_order(
     recalc_work_order_totals(db, wo.id)
     db.commit()
 
-    wo = db.scalars(
-        select(WorkOrder)
-        .where(WorkOrder.id == wo.id)
-        .options(selectinload(WorkOrder.items))
-    ).one()
+    wo = _load_work_order(db, wo.id)
+    assert wo is not None
     return _wo_to_read(wo, user)
 
 
@@ -484,11 +508,7 @@ def get_work_order(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    wo = db.scalars(
-        select(WorkOrder)
-        .where(WorkOrder.id == work_order_id)
-        .options(selectinload(WorkOrder.items))
-    ).first()
+    wo = _load_work_order(db, work_order_id)
     if not wo:
         raise HTTPException(status_code=404, detail="Work order not found")
     assert_can_manage_work_order(user, wo)
@@ -502,11 +522,7 @@ def assign_work_order(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    wo = db.scalars(
-        select(WorkOrder)
-        .where(WorkOrder.id == work_order_id)
-        .options(selectinload(WorkOrder.items))
-    ).first()
+    wo = _load_work_order(db, work_order_id)
     if not wo:
         raise HTTPException(status_code=404, detail="Work order not found")
     assert_can_mutate_work_order_header(user, wo)
@@ -530,12 +546,8 @@ def assign_work_order(
             db, wo, WorkOrderStatus.ASSIGNED, user.id, note=payload.note or "Assigned"
         )
     db.commit()
-    db.refresh(wo)
-    wo = db.scalars(
-        select(WorkOrder)
-        .where(WorkOrder.id == wo.id)
-        .options(selectinload(WorkOrder.items))
-    ).one()
+    wo = _load_work_order(db, wo.id)
+    assert wo is not None
     return _wo_to_read(wo, user)
 
 
@@ -546,21 +558,14 @@ def set_work_order_status(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> dict:
-    wo = db.scalars(
-        select(WorkOrder)
-        .where(WorkOrder.id == work_order_id)
-        .options(selectinload(WorkOrder.items))
-    ).first()
+    wo = _load_work_order(db, work_order_id)
     if not wo:
         raise HTTPException(status_code=404, detail="Work order not found")
     assert_can_mutate_work_order_header(user, wo)
     change_work_order_status(db, wo, payload.status, user.id, note=payload.note)
     db.commit()
-    wo = db.scalars(
-        select(WorkOrder)
-        .where(WorkOrder.id == wo.id)
-        .options(selectinload(WorkOrder.items))
-    ).one()
+    wo = _load_work_order(db, wo.id)
+    assert wo is not None
     return _wo_to_read(wo, user)
 
 
@@ -573,7 +578,7 @@ def work_order_history(
     wo = db.scalars(
         select(WorkOrder)
         .where(WorkOrder.id == work_order_id)
-        .options(selectinload(WorkOrder.items), selectinload(WorkOrder.status_history))
+        .options(*_wo_eager_options(), selectinload(WorkOrder.status_history))
     ).first()
     if not wo:
         raise HTTPException(status_code=404, detail="Work order not found")
@@ -600,7 +605,8 @@ def add_work_order_item(
     db.flush()
     recalc_work_order_totals(db, wo.id)
     db.commit()
-    db.refresh(item)
+    item = _load_work_order_item(db, item.id)
+    assert item is not None
     return _item_to_read(item, user)
 
 
@@ -646,7 +652,8 @@ def update_work_order_item(
     db.flush()
     recalc_work_order_totals(db, wo.id)
     db.commit()
-    db.refresh(item)
+    item = _load_work_order_item(db, item.id)
+    assert item is not None
     return _item_to_read(item, user)
 
 

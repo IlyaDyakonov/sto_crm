@@ -5,6 +5,7 @@ import { TaskList } from '../components/TaskList'
 import { WorkOrderList } from '../components/WorkOrderList'
 import { useUser } from '../context/UserContext'
 import { useApiResource } from '../hooks/useApiResource'
+import { roleBadgeClass, roleLabel } from '../lib/roles'
 
 const DASHBOARD_LIMIT = 8
 
@@ -20,31 +21,56 @@ export function DashboardPage() {
   const myTasks = (tasks.data ?? []).slice(0, DASHBOARD_LIMIT)
 
   return (
-    <section>
-      <h1>Дашборд</h1>
-      <StatusBlock loading={loading} error={error}>
-        {me && (
-          <p>
-            {me.full_name} · {me.role}
-            {me.branch_id != null ? ` · филиал ${me.branch_id}` : ' · вся сеть'}
+    <section className="page">
+      <header className="page__header">
+        <div className="page__title-block">
+          <h1>Дашборд</h1>
+          <p className="page__lead">
+            Краткие списки по текущей роли — переключите пользователя в шапке.
           </p>
-        )}
+        </div>
+      </header>
 
-        <h2>
-          Заказ-наряды{' '}
-          <Link to="/work-orders">(все)</Link>
-        </h2>
-        <WorkOrderList
-          items={myOrders}
-          role={me?.role}
-          emptyText="Нет заказ-нарядов"
-        />
+      <StatusBlock loading={loading} error={error}>
+        <div className="stack">
+          {me && (
+            <div className="card">
+              <div className="title-with-badge">
+                <strong>{me.full_name}</strong>
+                <span className={roleBadgeClass(me.role)}>{roleLabel(me.role)}</span>
+                <span className="muted">
+                  {me.branch_id != null ? `филиал #${me.branch_id}` : 'вся сеть'}
+                </span>
+              </div>
+            </div>
+          )}
 
-        <h2>
-          Задачи{' '}
-          <Link to="/tasks">(все)</Link>
-        </h2>
-        <TaskList items={myTasks} emptyText="Нет задач" />
+          <div className="grid-2">
+            <div className="card card--flush">
+              <div className="card__header">
+                <h2 className="card__title">Заказ-наряды</h2>
+                <Link className="section-head__link" to="/work-orders">
+                  Все →
+                </Link>
+              </div>
+              <WorkOrderList
+                items={myOrders}
+                role={me?.role}
+                emptyText="Нет заказ-нарядов"
+              />
+            </div>
+
+            <div className="card card--flush">
+              <div className="card__header">
+                <h2 className="card__title">Задачи</h2>
+                <Link className="section-head__link" to="/tasks">
+                  Все →
+                </Link>
+              </div>
+              <TaskList items={myTasks} emptyText="Нет задач" />
+            </div>
+          </div>
+        </div>
       </StatusBlock>
     </section>
   )

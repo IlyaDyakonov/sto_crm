@@ -9,16 +9,26 @@ export function WorkOrdersPage() {
   const { data, loading, error } = useApiResource(listWorkOrders)
 
   return (
-    <section>
-      <h1>Заказ-наряды</h1>
-      <StatusBlock
-        loading={loading}
-        error={error}
-        empty={!data?.length}
-        emptyText="Нет заказ-нарядов для этой роли"
-      >
-        <WorkOrderList items={data ?? []} role={me?.role} />
-      </StatusBlock>
+    <section className="page">
+      <header className="page__header">
+        <div className="page__title-block">
+          <h1>Заказ-наряды</h1>
+          <p className="page__lead">
+            Список доступных ЗН. У рабочего суммы скрыты.
+          </p>
+        </div>
+      </header>
+
+      <div className="card card--flush">
+        <StatusBlock
+          loading={loading}
+          error={error}
+          empty={!data?.length}
+          emptyText="Нет заказ-нарядов для этой роли"
+        >
+          <WorkOrderList items={data ?? []} role={me?.role} />
+        </StatusBlock>
+      </div>
     </section>
   )
 }

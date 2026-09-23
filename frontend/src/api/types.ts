@@ -48,6 +48,28 @@ export type WorkOrderStatus =
   | 'closed'
   | 'cancelled'
 
+export type BranchBrief = {
+  id: number
+  name: string
+}
+
+export type ClientBrief = {
+  id: number
+  name: string
+}
+
+export type VehicleBrief = {
+  id: number
+  plate_number: string
+  make: string
+  model: string
+}
+
+export type UserBrief = {
+  id: number
+  full_name: string
+}
+
 export type WorkOrderItem = {
   id: number
   work_order_id: number
@@ -58,6 +80,7 @@ export type WorkOrderItem = {
   unit_price?: string | number | null
   amount?: string | number | null
   assignee_id: number | null
+  assignee?: UserBrief | null
   status: string
   sort_order: number
 }
@@ -80,6 +103,10 @@ export type WorkOrder = {
   is_warranty: boolean
   urgency: string
   notes: string | null
+  branch?: BranchBrief | null
+  client?: ClientBrief | null
+  vehicle?: VehicleBrief | null
+  primary_assignee?: UserBrief | null
   items: WorkOrderItem[]
   created_at: string
   updated_at: string

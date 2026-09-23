@@ -4,10 +4,10 @@ import { NavMenu } from './NavMenu'
 
 export function Layout() {
   return (
-    <div>
+    <div className="app-shell">
       <Header />
       <NavMenu />
-      <main>
+      <main className="app-main">
         <Outlet />
       </main>
     </div>

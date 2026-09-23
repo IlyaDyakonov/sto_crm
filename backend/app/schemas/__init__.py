@@ -207,6 +207,29 @@ class VisitRead(ORMModel):
     updated_at: datetime
 
 
+# ----- Brief nested (WO responses) -----
+class BranchBrief(ORMModel):
+    id: int
+    name: str
+
+
+class ClientBrief(ORMModel):
+    id: int
+    name: str
+
+
+class VehicleBrief(ORMModel):
+    id: int
+    plate_number: str
+    make: str
+    model: str
+
+
+class UserBrief(ORMModel):
+    id: int
+    full_name: str
+
+
 # ----- Work order item -----
 class WorkOrderItemCreate(BaseModel):
     title: str
@@ -240,6 +263,7 @@ class WorkOrderItemRead(ORMModel):
     unit_price: Decimal | None = None
     amount: Decimal | None = None
     assignee_id: int | None
+    assignee: UserBrief | None = None
     status: WorkOrderItemStatus
     sort_order: int
     created_at: datetime
@@ -304,6 +328,10 @@ class WorkOrderRead(ORMModel):
     ready_at: datetime | None
     delivered_at: datetime | None
     closed_at: datetime | None
+    branch: BranchBrief
+    client: ClientBrief
+    vehicle: VehicleBrief
+    primary_assignee: UserBrief | None = None
     items: list[WorkOrderItemRead] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime

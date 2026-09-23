@@ -9,11 +9,17 @@ const LINKS = [
 
 export function NavMenu() {
   return (
-    <nav>
-      <ul>
+    <nav className="app-nav" aria-label="Основное меню">
+      <ul className="app-nav__list">
         {LINKS.map(({ to, end, label }) => (
           <li key={to}>
-            <NavLink to={to} end={end}>
+            <NavLink
+              to={to}
+              end={end}
+              className={({ isActive }) =>
+                isActive ? 'app-nav__link is-active' : 'app-nav__link'
+              }
+            >
               {label}
             </NavLink>
           </li>
