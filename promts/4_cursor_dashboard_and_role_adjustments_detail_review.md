@@ -225,3 +225,22 @@ To-do's from the plan have already been created. Do not create them again. Mark 
 
 Новые пользователи появляются в таблице с их `id` (для демо в шапке по-прежнему seed 1–6; переключиться на нового можно по id из списка).
 
+---
+
+**User**
+
+422: value is not a valid email address: The part after the @-sign is a special-use or reserved name that cannot be used with email.
+
+при добавлении пользователя.
+worker.electrian@sto.local - почта которую добавляю
+
+---
+
+**Cursor**
+
+Pydantic отклоняет `.local` как зарезервированный TLD. Ослаблю валидацию email под демо-домены вроде `sto.local`.
+
+Причина: `EmailStr` не принимает домен `.local` (как в seed: `sto.local`).
+
+Валидацию заменил на простую проверку формата — `worker.electrian@sto.local` теперь проходит. Повтори добавление.
+
