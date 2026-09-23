@@ -85,6 +85,44 @@ export type WorkOrderItem = {
   sort_order: number
 }
 
+export type WorkOrderItemWrite = {
+  id?: number | null
+  title: string
+  description?: string | null
+  item_type: 'labor' | 'part'
+  qty: number | string
+  unit_price: number | string
+  assignee_id?: number | null
+  status?: string
+  sort_order?: number
+}
+
+export type WorkOrderCreatePayload = {
+  number?: string | null
+  branch_id: number
+  visit_id?: number | null
+  client_id: number
+  vehicle_id: number
+  title?: string | null
+  primary_assignee_id?: number | null
+  is_warranty?: boolean
+  urgency?: string
+  notes?: string | null
+  items?: WorkOrderItemWrite[]
+}
+
+export type WorkOrderUpdatePayload = {
+  branch_id?: number
+  client_id?: number
+  vehicle_id?: number
+  title?: string | null
+  primary_assignee_id?: number | null
+  is_warranty?: boolean
+  urgency?: string
+  notes?: string | null
+  items?: WorkOrderItemWrite[]
+}
+
 export type WorkOrder = {
   id: number
   number: string
@@ -112,6 +150,8 @@ export type WorkOrder = {
   updated_at: string
 }
 
+export type TaskStatus = 'open' | 'in_progress' | 'done' | 'cancelled'
+
 export type Task = {
   id: number
   branch_id: number | null
@@ -122,7 +162,7 @@ export type Task = {
   task_type: string
   title: string
   due_at: string | null
-  status: string
+  status: TaskStatus | string
   created_by: number
   created_at: string
   updated_at: string

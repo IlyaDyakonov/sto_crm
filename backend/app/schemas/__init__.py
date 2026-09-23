@@ -1,7 +1,8 @@
 from datetime import datetime
 from decimal import Decimal
+import re
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.enums import (
     AppointmentStatus,
@@ -21,6 +22,16 @@ from app.enums import (
     WorkOrderItemType,
     WorkOrderStatus,
 )
+
+# Демо-домены вроде sto.local — EmailStr их отклоняет как reserved TLD
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _validate_email(value: str) -> str:
+    email = value.strip()
+    if not _EMAIL_RE.match(email):
+        raise ValueError("Invalid email format")
+    return email.lower()
 
 
 class ORMModel(BaseModel):
@@ -48,10 +59,15 @@ class BranchRead(ORMModel):
 # ----- User -----
 class UserCreate(BaseModel):
     full_name: str
-    email: EmailStr
+    email: str
     role: UserRole
     branch_id: int | None = None
     is_active: bool = True
+
+    @field_validator("email")
+    @classmethod
+    def email_ok(cls, v: str) -> str:
+        return _validate_email(v)
 
 
 class UserRead(ORMModel):
@@ -272,7 +288,7 @@ class WorkOrderItemRead(ORMModel):
 
 # ----- Work order -----
 class WorkOrderCreate(BaseModel):
-    number: str
+    number: str | None = None
     branch_id: int
     visit_id: int | None = None
     client_id: int
@@ -284,6 +300,32 @@ class WorkOrderCreate(BaseModel):
     urgency: Urgency = Urgency.NORMAL
     notes: str | None = None
     items: list[WorkOrderItemCreate] = Field(default_factory=list)
+
+
+class WorkOrderItemWrite(BaseModel):
+    """Позиция при create/update ЗН. id — обновить существующую; без id — создать."""
+
+    id: int | None = None
+    title: str
+    description: str | None = None
+    item_type: WorkOrderItemType
+    qty: Decimal = Field(default=Decimal("1"))
+    unit_price: Decimal
+    assignee_id: int | None = None
+    status: WorkOrderItemStatus = WorkOrderItemStatus.PENDING
+    sort_order: int = 0
+
+
+class WorkOrderUpdate(BaseModel):
+    branch_id: int | None = None
+    client_id: int | None = None
+    vehicle_id: int | None = None
+    title: str | None = None
+    primary_assignee_id: int | None = None
+    is_warranty: bool | None = None
+    urgency: Urgency | None = None
+    notes: str | None = None
+    items: list[WorkOrderItemWrite] | None = None
 
 
 class WorkOrderAssign(BaseModel):

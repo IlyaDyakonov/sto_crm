@@ -54,8 +54,17 @@ def assert_can_mutate_work_order_header(user: User, wo: WorkOrder) -> None:
     )
 
 
-def worker_can_update_item(user: User, item: WorkOrderItem) -> bool:
-    return user.role == UserRole.WORKER and item.assignee_id == user.id
+def worker_can_update_item(
+    user: User, item: WorkOrderItem, wo: WorkOrder | None = None
+) -> bool:
+    """Рабочий может менять статус своих позиций или всех позиций ЗН, где он primary."""
+    if user.role != UserRole.WORKER:
+        return False
+    if item.assignee_id == user.id:
+        return True
+    if wo is not None and wo.primary_assignee_id == user.id:
+        return True
+    return False
 
 
 def _worker_assigned_to_wo(user: User, wo: WorkOrder) -> bool:

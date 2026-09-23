@@ -4,10 +4,15 @@ import type {
   Client,
   Payment,
   Task,
+  TaskStatus,
   User,
+  UserRole,
   Vehicle,
   WorkOrder,
+  WorkOrderCreatePayload,
+  WorkOrderItem,
   WorkOrderStatus,
+  WorkOrderUpdatePayload,
 } from './types'
 
 export function getMe(userId: number): Promise<User> {
@@ -18,8 +23,47 @@ export function listBranches(userId: number): Promise<Branch[]> {
   return apiJson<Branch[]>('/api/branches', userId)
 }
 
-export function listUsers(userId: number): Promise<User[]> {
-  return apiJson<User[]>('/api/users', userId)
+export function createBranch(
+  userId: number,
+  payload: {
+    name: string
+    address?: string | null
+    is_active?: boolean
+    plan_monthly_revenue?: number | string | null
+  },
+): Promise<Branch> {
+  return apiJson<Branch>('/api/branches', userId, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export function listUsers(
+  userId: number,
+  opts?: { role?: UserRole },
+): Promise<User[]> {
+  const params = new URLSearchParams()
+  if (opts?.role) params.set('role', opts.role)
+  const qs = params.toString()
+  return apiJson<User[]>(`/api/users${qs ? `?${qs}` : ''}`, userId)
+}
+
+export function createUser(
+  userId: number,
+  payload: {
+    full_name: string
+    email: string
+    role: UserRole
+    branch_id?: number | null
+    is_active?: boolean
+  },
+): Promise<User> {
+  return apiJson<User>('/api/users', userId, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
 }
 
 export function listClients(userId: number, q?: string): Promise<Client[]> {
@@ -27,6 +71,23 @@ export function listClients(userId: number, q?: string): Promise<Client[]> {
   if (q?.trim()) params.set('q', q.trim())
   const qs = params.toString()
   return apiJson<Client[]>(`/api/clients${qs ? `?${qs}` : ''}`, userId)
+}
+
+export function createClient(
+  userId: number,
+  payload: {
+    name: string
+    phone: string
+    email?: string | null
+    client_type?: string
+    notes?: string | null
+  },
+): Promise<Client> {
+  return apiJson<Client>('/api/clients', userId, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
 }
 
 export function listVehicles(
@@ -40,12 +101,54 @@ export function listVehicles(
   return apiJson<Vehicle[]>(`/api/vehicles${qs ? `?${qs}` : ''}`, userId)
 }
 
+export function createVehicle(
+  userId: number,
+  payload: {
+    client_id: number
+    plate_number: string
+    make: string
+    model: string
+    vin?: string | null
+    year?: number | null
+    mileage?: number | null
+  },
+): Promise<Vehicle> {
+  return apiJson<Vehicle>('/api/vehicles', userId, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
 export function listWorkOrders(userId: number): Promise<WorkOrder[]> {
   return apiJson<WorkOrder[]>('/api/work-orders', userId)
 }
 
 export function getWorkOrder(userId: number, workOrderId: number): Promise<WorkOrder> {
   return apiJson<WorkOrder>(`/api/work-orders/${workOrderId}`, userId)
+}
+
+export function createWorkOrder(
+  userId: number,
+  payload: WorkOrderCreatePayload,
+): Promise<WorkOrder> {
+  return apiJson<WorkOrder>('/api/work-orders', userId, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export function updateWorkOrder(
+  userId: number,
+  workOrderId: number,
+  payload: WorkOrderUpdatePayload,
+): Promise<WorkOrder> {
+  return apiJson<WorkOrder>(`/api/work-orders/${workOrderId}`, userId, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
 }
 
 export function changeWorkOrderStatus(
@@ -77,8 +180,52 @@ export function assignWorkOrder(
   })
 }
 
+export function updateWorkOrderItem(
+  userId: number,
+  itemId: number,
+  payload: { status: string },
+): Promise<WorkOrderItem> {
+  return apiJson<WorkOrderItem>(`/api/work-order-items/${itemId}`, userId, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
 export function listTasks(userId: number): Promise<Task[]> {
   return apiJson<Task[]>('/api/tasks', userId)
+}
+
+export function createTask(
+  userId: number,
+  payload: {
+    title: string
+    task_type: string
+    assignee_id: number
+    branch_id?: number | null
+    work_order_id?: number | null
+    client_id?: number | null
+    vehicle_id?: number | null
+    due_at?: string | null
+  },
+): Promise<Task> {
+  return apiJson<Task>('/api/tasks', userId, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+}
+
+export function updateTask(
+  userId: number,
+  taskId: number,
+  payload: { status?: TaskStatus; title?: string },
+): Promise<Task> {
+  return apiJson<Task>(`/api/tasks/${taskId}`, userId, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
 }
 
 export function listPayments(userId: number): Promise<Payment[]> {

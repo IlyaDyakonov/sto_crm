@@ -1,21 +1,55 @@
+import { useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { listTasks, listWorkOrders } from '../api/endpoints'
+import {
+  listBranches,
+  listTasks,
+  listUsers,
+  listWorkOrders,
+} from '../api/endpoints'
+import { BranchPlanFactList } from '../components/BranchPlanFactList'
+import { StaffRoster } from '../components/StaffRoster'
 import { StatusBlock } from '../components/StatusBlock'
 import { TaskList } from '../components/TaskList'
 import { WorkOrderList } from '../components/WorkOrderList'
 import { useUser } from '../context/UserContext'
 import { useApiResource } from '../hooks/useApiResource'
-import { roleBadgeClass, roleLabel } from '../lib/roles'
+import { canSeeFinance, roleBadgeClass, roleLabel } from '../lib/roles'
 
 const DASHBOARD_LIMIT = 8
 
 export function DashboardPage() {
   const { me, meLoading, meError } = useUser()
+  const showFinance = canSeeFinance(me?.role)
+  const isDirector = me?.role === 'director'
+
   const workOrders = useApiResource(listWorkOrders)
   const tasks = useApiResource(listTasks)
 
-  const loading = meLoading || workOrders.loading || tasks.loading
-  const error = meError || workOrders.error || tasks.error
+  const branchesFetcher = useCallback(
+    (uid: number) =>
+      showFinance ? listBranches(uid) : Promise.resolve([]),
+    [showFinance],
+  )
+  const branches = useApiResource(branchesFetcher, [showFinance])
+
+  const usersFetcher = useCallback(
+    (uid: number) => (isDirector ? listUsers(uid) : Promise.resolve([])),
+    [isDirector],
+  )
+  const users = useApiResource(usersFetcher, [isDirector])
+
+  const loading =
+    meLoading ||
+    workOrders.loading ||
+    tasks.loading ||
+    (showFinance && branches.loading) ||
+    (isDirector && users.loading)
+  const error =
+    meError ||
+    workOrders.error ||
+    tasks.error ||
+    (showFinance ? branches.error : null) ||
+    (isDirector ? users.error : null)
 
   const myOrders = (workOrders.data ?? []).slice(0, DASHBOARD_LIMIT)
   const myTasks = (tasks.data ?? []).slice(0, DASHBOARD_LIMIT)
@@ -45,31 +79,58 @@ export function DashboardPage() {
             </div>
           )}
 
-          <div className="grid-2">
+          {showFinance && (
             <div className="card card--flush">
               <div className="card__header">
-                <h2 className="card__title">Заказ-наряды</h2>
-                <Link className="section-head__link" to="/work-orders">
-                  Все →
-                </Link>
+                <h2 className="card__title">Филиалы — выручка (факт)</h2>
               </div>
-              <WorkOrderList
-                items={myOrders}
-                role={me?.role}
-                emptyText="Нет заказ-нарядов"
+              <BranchPlanFactList
+                branches={branches.data ?? []}
+                workOrders={workOrders.data ?? []}
+                canCreate={isDirector}
+                onCreated={branches.reload}
               />
             </div>
+          )}
 
+          <div className="card card--flush">
+            <div className="card__header">
+              <h2 className="card__title">Заказ-наряды</h2>
+              <Link className="section-head__link" to="/work-orders">
+                Все →
+              </Link>
+            </div>
+            <WorkOrderList
+              items={myOrders}
+              role={me?.role}
+              emptyText="Нет заказ-нарядов"
+            />
+          </div>
+
+          <div className="card card--flush">
+            <div className="card__header">
+              <h2 className="card__title">Задачи</h2>
+              <Link className="section-head__link" to="/tasks">
+                Все →
+              </Link>
+            </div>
+            <TaskList items={myTasks} emptyText="Нет задач" />
+          </div>
+
+          {isDirector && (
             <div className="card card--flush">
               <div className="card__header">
-                <h2 className="card__title">Задачи</h2>
-                <Link className="section-head__link" to="/tasks">
-                  Все →
-                </Link>
+                <h2 className="card__title">Сотрудники</h2>
+                <span className="muted">руководители и рабочие</span>
               </div>
-              <TaskList items={myTasks} emptyText="Нет задач" />
+              <StaffRoster
+                users={users.data ?? []}
+                branches={branches.data ?? []}
+                canCreate
+                onCreated={users.reload}
+              />
             </div>
-          </div>
+          )}
         </div>
       </StatusBlock>
     </section>

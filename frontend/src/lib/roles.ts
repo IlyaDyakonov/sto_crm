@@ -73,3 +73,33 @@ export const WO_STATUS_LABELS: Record<WorkOrderStatus, string> = {
 export function nextWorkOrderStatuses(current: WorkOrderStatus): WorkOrderStatus[] {
   return WO_TRANSITIONS[current] ?? []
 }
+
+export const WO_ITEM_STATUSES = [
+  'pending',
+  'assigned',
+  'waiting_parts',
+  'in_progress',
+  'done',
+] as const
+
+export type WorkOrderItemStatus = (typeof WO_ITEM_STATUSES)[number]
+
+export const WO_ITEM_STATUS_LABELS: Record<WorkOrderItemStatus, string> = {
+  pending: 'Ожидает',
+  assigned: 'Назначена',
+  waiting_parts: 'Ждём запчасти',
+  in_progress: 'В работе',
+  done: 'Готово',
+}
+
+export function canUpdateWorkOrderItemStatus(
+  role: UserRole | null | undefined,
+  userId: number | null | undefined,
+  wo: { primary_assignee_id: number | null },
+  item: { assignee_id: number | null },
+): boolean {
+  if (role !== 'worker' || userId == null) return false
+  if (item.assignee_id === userId) return true
+  if (wo.primary_assignee_id === userId) return true
+  return false
+}

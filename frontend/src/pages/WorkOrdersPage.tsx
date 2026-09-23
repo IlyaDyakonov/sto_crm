@@ -1,12 +1,15 @@
+import { Link } from 'react-router-dom'
 import { listWorkOrders } from '../api/endpoints'
 import { StatusBlock } from '../components/StatusBlock'
 import { WorkOrderList } from '../components/WorkOrderList'
 import { useUser } from '../context/UserContext'
 import { useApiResource } from '../hooks/useApiResource'
+import { canManageWorkOrderHeader } from '../lib/roles'
 
 export function WorkOrdersPage() {
   const { me } = useUser()
   const { data, loading, error } = useApiResource(listWorkOrders)
+  const canCreate = canManageWorkOrderHeader(me?.role)
 
   return (
     <section className="page">
@@ -17,6 +20,11 @@ export function WorkOrdersPage() {
             Список доступных ЗН. У рабочего суммы скрыты.
           </p>
         </div>
+        {canCreate && (
+          <Link className="btn" to="/work-orders/new">
+            Создать ЗН
+          </Link>
+        )}
       </header>
 
       <div className="card card--flush">

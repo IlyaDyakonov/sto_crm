@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_, select
@@ -46,9 +47,11 @@ from app.schemas import (
     WorkOrderItemCreate,
     WorkOrderItemRead,
     WorkOrderItemUpdate,
+    WorkOrderItemWrite,
     WorkOrderRead,
     WorkOrderStatusChange,
     WorkOrderStatusHistoryRead,
+    WorkOrderUpdate,
 )
 from app.services.acl import (
     assert_branch_access,
@@ -113,6 +116,65 @@ def _branch_to_read(branch: Branch, user: User) -> dict:
     return strip_finance_fields(data, user)
 
 
+def _validate_wo_client_vehicle(
+    db: Session, client_id: int, vehicle_id: int
+) -> None:
+    client = db.get(Client, client_id)
+    if not client:
+        raise HTTPException(status_code=400, detail="Client not found")
+    vehicle = db.get(Vehicle, vehicle_id)
+    if not vehicle:
+        raise HTTPException(status_code=400, detail="Vehicle not found")
+    if vehicle.client_id != client_id:
+        raise HTTPException(
+            status_code=400, detail="Vehicle does not belong to client"
+        )
+
+
+def _validate_wo_assignee(
+    db: Session, assignee_id: int | None, branch_id: int
+) -> None:
+    if assignee_id is None:
+        return
+    assignee = db.get(User, assignee_id)
+    if not assignee or assignee.role != UserRole.WORKER:
+        raise HTTPException(status_code=400, detail="Assignee must be a worker")
+    if assignee.branch_id != branch_id:
+        raise HTTPException(
+            status_code=400, detail="Worker must belong to WO branch"
+        )
+
+
+def _assign_wo_number(db: Session, wo: WorkOrder) -> None:
+    year = datetime.now(timezone.utc).year
+    wo.number = f"WO-{year}-{wo.id:04d}"
+    db.flush()
+
+
+def _replace_wo_items(
+    db: Session, wo: WorkOrder, items: list[WorkOrderItemWrite]
+) -> None:
+    """Полная замена позиций: переданные с id обновляются, без id — создаются,
+    отсутствующие в payload удаляются."""
+    existing = {item.id: item for item in list(wo.items)}
+    keep_ids: set[int] = set()
+    for idx, raw in enumerate(items):
+        data = raw.model_dump(exclude={"id"})
+        data["sort_order"] = data.get("sort_order") or idx
+        if raw.id is not None and raw.id in existing:
+            item = existing[raw.id]
+            for key, value in data.items():
+                setattr(item, key, value)
+            keep_ids.add(raw.id)
+        else:
+            item = WorkOrderItem(work_order_id=wo.id, **data)
+            db.add(item)
+    for item_id, item in existing.items():
+        if item_id not in keep_ids:
+            db.delete(item)
+    db.flush()
+
+
 # ---------- health / me ----------
 
 @router.get("/health")
@@ -132,8 +194,11 @@ def list_branches(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[dict]:
+    # Worker: без филиалов/плана (финансы скрыты на UI и в strip_finance_fields)
+    if user.role == UserRole.WORKER:
+        return []
     q = select(Branch).order_by(Branch.id)
-    if user.role != UserRole.DIRECTOR:
+    if user.role == UserRole.BRANCH_MANAGER:
         q = q.where(Branch.id == user.branch_id)
     rows = db.scalars(q).all()
     return [_branch_to_read(b, user) for b in rows]
@@ -171,14 +236,18 @@ def get_branch(
 
 @router.get("/users", response_model=list[UserRead])
 def list_users(
+    role: UserRole | None = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[User]:
     q = select(User).order_by(User.id)
     if user.role == UserRole.BRANCH_MANAGER:
+        # Только свой филиал (для назначения исполнителя — role=worker)
         q = q.where(User.branch_id == user.branch_id)
     elif user.role == UserRole.WORKER:
         q = q.where(User.id == user.id)
+    if role is not None:
+        q = q.where(User.role == role)
     return list(db.scalars(q).all())
 
 
@@ -195,6 +264,17 @@ def create_user(
             raise HTTPException(status_code=403, detail="Can only create users in own branch")
         if payload.role == UserRole.DIRECTOR:
             raise HTTPException(status_code=403, detail="Cannot create director")
+    if payload.role == UserRole.DIRECTOR:
+        if payload.branch_id is not None:
+            raise HTTPException(
+                status_code=400, detail="Director must not be bound to a branch"
+            )
+    elif payload.branch_id is None:
+        raise HTTPException(
+            status_code=400, detail="branch_id is required for this role"
+        )
+    elif not db.get(Branch, payload.branch_id):
+        raise HTTPException(status_code=400, detail="Branch not found")
     row = User(**payload.model_dump())
     db.add(row)
     db.commit()
@@ -482,10 +562,16 @@ def create_work_order(
     if user.role == UserRole.WORKER:
         raise HTTPException(status_code=403, detail="Workers cannot create work orders")
 
-    data = payload.model_dump(exclude={"items"})
-    wo = WorkOrder(**data, status=WorkOrderStatus.CREATED)
+    _validate_wo_client_vehicle(db, payload.client_id, payload.vehicle_id)
+    _validate_wo_assignee(db, payload.primary_assignee_id, payload.branch_id)
+
+    data = payload.model_dump(exclude={"items", "number"})
+    number = (payload.number or "").strip() or f"DRAFT-{uuid4().hex[:12]}"
+    wo = WorkOrder(**data, number=number, status=WorkOrderStatus.CREATED)
     db.add(wo)
     db.flush()
+    if not (payload.number or "").strip():
+        _assign_wo_number(db, wo)
 
     for item_data in payload.items:
         item = WorkOrderItem(
@@ -512,6 +598,60 @@ def get_work_order(
     if not wo:
         raise HTTPException(status_code=404, detail="Work order not found")
     assert_can_manage_work_order(user, wo)
+    return _wo_to_read(wo, user)
+
+
+@router.patch("/work-orders/{work_order_id}")
+def update_work_order(
+    work_order_id: int,
+    payload: WorkOrderUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    wo = _load_work_order(db, work_order_id)
+    if not wo:
+        raise HTTPException(status_code=404, detail="Work order not found")
+    assert_can_mutate_work_order_header(user, wo)
+
+    updates = payload.model_dump(exclude_unset=True, exclude={"items"})
+
+    if "branch_id" in updates:
+        if updates["branch_id"] != wo.branch_id:
+            if user.role != UserRole.DIRECTOR:
+                raise HTTPException(
+                    status_code=403, detail="Only director can change branch"
+                )
+            assert_branch_access(user, updates["branch_id"])
+        elif user.role == UserRole.BRANCH_MANAGER:
+            assert_branch_access(user, updates["branch_id"])
+
+    new_branch_id = updates.get("branch_id", wo.branch_id)
+    new_client_id = updates.get("client_id", wo.client_id)
+    new_vehicle_id = updates.get("vehicle_id", wo.vehicle_id)
+    new_assignee_id = updates.get(
+        "primary_assignee_id", wo.primary_assignee_id
+    )
+
+    if "client_id" in updates or "vehicle_id" in updates:
+        _validate_wo_client_vehicle(db, new_client_id, new_vehicle_id)
+    if "primary_assignee_id" in updates or "branch_id" in updates:
+        _validate_wo_assignee(db, new_assignee_id, new_branch_id)
+
+    for key, value in updates.items():
+        setattr(wo, key, value)
+
+    if "primary_assignee_id" in updates and updates["primary_assignee_id"] is not None:
+        wo.assigned_by = user.id
+        wo.assigned_at = datetime.now(timezone.utc)
+
+    if payload.items is not None:
+        _replace_wo_items(db, wo, payload.items)
+
+    db.flush()
+    recalc_work_order_totals(db, wo.id)
+    db.commit()
+    wo = _load_work_order(db, wo.id)
+    assert wo is not None
     return _wo_to_read(wo, user)
 
 
@@ -625,7 +765,7 @@ def update_work_order_item(
 
     updates = payload.model_dump(exclude_unset=True)
     if user.role == UserRole.WORKER:
-        if not worker_can_update_item(user, item):
+        if not worker_can_update_item(user, item, wo):
             raise HTTPException(status_code=403, detail="Not your item")
         # workers may only change execution status
         allowed = {"status"}
@@ -727,10 +867,11 @@ def list_tasks(
     user: User = Depends(get_current_user),
 ) -> list[Task]:
     stmt = select(Task).order_by(Task.id.desc())
-    if user.role == UserRole.WORKER:
-        stmt = stmt.where(Task.assignee_id == user.id)
-    elif user.role == UserRole.BRANCH_MANAGER:
-        stmt = stmt.where(Task.branch_id == user.branch_id)
+    # Директор видит все; остальные — созданные ими или назначенные на них
+    if user.role != UserRole.DIRECTOR:
+        stmt = stmt.where(
+            or_(Task.created_by == user.id, Task.assignee_id == user.id)
+        )
     return list(db.scalars(stmt.limit(100)).all())
 
 
@@ -740,11 +881,22 @@ def create_task(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> Task:
-    if payload.branch_id is not None:
-        assert_branch_access(user, payload.branch_id)
     if user.role == UserRole.WORKER:
         raise HTTPException(status_code=403, detail="Workers cannot create tasks")
-    row = Task(**payload.model_dump(), created_by=user.id)
+    data = payload.model_dump()
+    if user.role == UserRole.BRANCH_MANAGER and data.get("branch_id") is None:
+        data["branch_id"] = user.branch_id
+    if data.get("branch_id") is not None:
+        assert_branch_access(user, data["branch_id"])
+    assignee = db.get(User, data["assignee_id"])
+    if not assignee or not assignee.is_active:
+        raise HTTPException(status_code=400, detail="Assignee not found")
+    if user.role == UserRole.BRANCH_MANAGER:
+        if assignee.branch_id != user.branch_id and assignee.id != user.id:
+            raise HTTPException(
+                status_code=403, detail="Can only assign tasks within own branch"
+            )
+    row = Task(**data, created_by=user.id)
     db.add(row)
     db.commit()
     db.refresh(row)
@@ -761,10 +913,16 @@ def update_task(
     row = db.get(Task, task_id)
     if not row:
         raise HTTPException(status_code=404, detail="Task not found")
-    if user.role == UserRole.WORKER and row.assignee_id != user.id:
-        raise HTTPException(status_code=403, detail="Not your task")
-    if user.role == UserRole.BRANCH_MANAGER:
-        assert_branch_access(user, row.branch_id)
+    if user.role == UserRole.DIRECTOR:
+        pass
+    elif user.role == UserRole.WORKER:
+        if row.assignee_id != user.id and row.created_by != user.id:
+            raise HTTPException(status_code=403, detail="Not your task")
+    elif user.role == UserRole.BRANCH_MANAGER:
+        if row.created_by != user.id and row.assignee_id != user.id:
+            if row.branch_id is None:
+                raise HTTPException(status_code=403, detail="Not your task")
+            assert_branch_access(user, row.branch_id)
     for key, value in payload.model_dump(exclude_unset=True).items():
         setattr(row, key, value)
     db.commit()

@@ -506,6 +506,12 @@ textarea {
   white-space: nowrap;
 }
 
+.table-footnote {
+  margin: 0;
+  padding: var(--space-3) var(--space-5) var(--space-4);
+  font-size: 0.82rem;
+}
+
 /* ——— Badges ——— */
 
 .badge {
@@ -608,10 +614,42 @@ textarea {
   min-width: 0;
 }
 
+.field > span {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
 .field label {
   font-size: 0.75rem;
   font-weight: 600;
   color: var(--text-muted);
+}
+
+.form-embed {
+  padding: var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--border);
+}
+
+.field--wide {
+  grid-column: 1 / -1;
+}
+
+.field--check {
+  justify-content: flex-end;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.field--check > span {
+  order: 1;
+}
+
+.input--num {
+  width: 6.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .input,
