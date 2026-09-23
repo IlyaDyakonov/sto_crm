@@ -1,0 +1,427 @@
+# Архитектура и схема данных (model-first lite)
+
+Черновик под `BUSINESS.md`. Стек зафиксирован, схема — рабочая гипотеза для прототипа (не финальный DDL production).
+
+---
+
+## 1. Стек
+
+| Слой | Выбор | Зачем |
+|------|--------|--------|
+| Backend | **Python + FastAPI** | Быстрые CRUD/API, роли, понятный для fintech-команды |
+| Frontend | **React** | Экраны CRM, переключатель ролей, канбан/дашборд |
+| БД | **PostgreSQL** | Связи, enum/check, деньги (`numeric`), индексы по филиалу/статусу |
+| ORM (ожидаемо) | SQLAlchemy 2.x + Alembic | Модели 1:1 со схемой, миграции позже |
+| Auth (прототип) | **`X-User-Id`** | Без JWT: клиент передаёт id пользователя, backend грузит роль/`branch_id` |
+
+### Логическая структура сервиса (модули API)
+
+```
+api/
+  branches, users, clients, vehicles,
+  touches, appointments, visits,
+  work_orders, payments, tasks, dashboard
+```
+
+Ось правды в коде и БД — **`work_orders`** (+ позиции работ). Воронка до ЗН живёт в `touches` → `appointments` → `visits` (+ диагностика/согласование как статусы визита или поля). После выдачи — `tasks` (постсервис) и новые касания/записи.
+
+---
+
+## 2. Принципы модели
+
+1. **Клиент сквозной по сети**, **ЗН и запись всегда с `branch_id`**.
+2. **Один визит → много заказ-нарядов** (`visits 1—N work_orders`). Пример: отдельный ЗН на подвеску и отдельный на окраску у разных мастеров. Внутри каждого ЗН — **позиции-работы** (labor/part) со своими ценами.
+3. **Стоимость ЗН** считается из items и **кэшируется** на шапке (`total_labor_amount`, `total_parts_amount`, `total_amount`). При любом изменении items — пересчёт.
+4. **Статус ЗН** — явные переходы руководителя/системы (см. §4); позиции имеют свои статусы исполнения.
+5. **Рабочий не видит финансы** — доступ API/UI; в БД суммы хранятся, в ответах для `worker` режутся.
+6. **PK везде `BIGINT` (BIGSERIAL / identity)**. Enum’ы в PostgreSQL или `VARCHAR` + CHECK.
+
+---
+
+## 3. Роли
+
+```text
+user_role: director | branch_manager | worker
+```
+
+| Роль | `branch_id` | Смысл |
+|------|-------------|--------|
+| `director` | `NULL` | Вся сеть |
+| `branch_manager` | обязателен | Свой филиал, назначение ЗН/позиций, касса |
+| `worker` | обязателен | Свои наряды/позиции, без кассы и сумм в API |
+
+---
+
+## 4. Статусы заказ-наряда (как просили + стыковка с 2.1)
+
+Жизненный цикл **шапки ЗН** (`work_order.status`):
+
+| Код | Название | Смысл |
+|-----|----------|--------|
+| `created` | Создан | ЗН открыт после согласования (или как черновик сметы) |
+| `assigned` | Назначен исполнитель | Руководитель отдал работу(и) рабочему |
+| `waiting_parts` | Ждём запчасти | Не искажает «в работе» |
+| `in_progress` | В работе | Идёт ремонт |
+| `work_completed` | Работы завершены | Мастера закончили |
+| `ready_for_pickup` | Авто готово к выдаче | Ждёт клиента |
+| `delivered` | Выдан клиенту | Авто забрали (оплата может быть частичной) |
+| `closed` | Закрыт | Оплачен / полностью закрыт по кассе |
+| `cancelled` | Отменён | Отказ / отмена |
+
+Дополнительно (не статус, а флаги/поля): `is_warranty`, `parent_work_order_id` (гарантия/рекламация), признак долга через сумму платежей vs `total_amount`.
+
+**Назначение исполнителя:**  
+- предпочтительно на **позицию** (`work_order_items.assignee_id`);  
+- на шапке можно держать `primary_assignee_id` (ответственный за ЗН целиком) для простых кейсов «весь наряд одному».
+
+Статус позиции (lite): `pending` → `assigned` → `waiting_parts` → `in_progress` → `done`.
+
+---
+
+## 5. Воронка 2.1 → таблицы
+
+| # | Этап BUSINESS | Где в БД |
+|---|----------------|----------|
+| 0 | Лид / касание | `touches` |
+| 1 | Запись | `appointments` |
+| 2 | Визит / приёмка | `visits` (`status`: arrived / waiting_intake / accepted / no_show…) |
+| 3 | Диагностика | `visits` + поля сметы / `visit_stage = diagnosis` |
+| 4 | Согласование | `visits.approval_status` или этап `approval` |
+| 5–7 | ЗН → в работе → готов | `work_orders` + `work_order_items` |
+| 8 | Выдача + оплата | `work_orders` (`delivered`/`closed`) + `payments` |
+| 9 | Постсервис | `tasks` (ТО, отзыв, перезвон) → новое `touch` / `appointment` |
+
+Отмена/отказ: `visits.lost_reason` / `work_orders.status = cancelled` + `cancel_reason`.
+
+---
+
+## 6. ER (lite)
+
+```text
+branches
+users (role, branch_id?)
+clients
+vehicles ──► clients
+touches ──► clients, vehicles?, branches?, appointments?
+appointments ──► clients, vehicles?, branches, touches?
+visits ──► appointments?, clients, vehicles, branches
+work_orders ──► visits? (N ЗН на 1 визит), clients, vehicles, branches
+work_order_items ──► work_orders, users(assignee)?
+payments ──► work_orders, branches
+tasks ──► clients?, work_orders?, users(assignee), branches?
+work_order_status_history ──► work_orders, users  (опционально, но полезно)
+```
+
+Связь **visit → work_orders: 1→N** (FK `work_orders.visit_id`, без unique на `visit_id`).
+
+---
+
+## 7. Таблицы (черновик полей)
+
+Деньги: `NUMERIC(12,2)`. PK/FK: **`BIGINT`** (`GENERATED BY DEFAULT AS IDENTITY` или `BIGSERIAL`). Везде: `created_at`, `updated_at`.
+
+### 7.1. `branches` — филиал СТО
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| id | bigint PK | |
+| name | text | «СТО на Ленина» |
+| address | text null | |
+| is_active | bool | |
+| plan_monthly_revenue | numeric null | план для план/факт директора |
+
+### 7.2. `users`
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| id | bigint PK | |
+| full_name | text | |
+| email | citext unique | логин |
+| password_hash | text null | в прототипе можно заглушка |
+| role | user_role | director / branch_manager / worker |
+| branch_id | bigint FK null | null только у director |
+| is_active | bool | |
+
+### 7.3. `clients`
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| id | bigint PK | |
+| name | text | ФИО или название юрлица |
+| phone | text | индекс для поиска |
+| email | text null | |
+| client_type | enum | person / company |
+| notes | text null | |
+
+### 7.4. `vehicles`
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| id | bigint PK | |
+| client_id | bigint FK | владелец |
+| plate_number | text | **главный поиск** |
+| vin | text null | |
+| make | text | марка |
+| model | text | |
+| year | int null | |
+| mileage | int null | последний известный |
+
+Unique lite: `(plate_number)` или `(plate_number, client_id)` — решить при реализации.
+
+### 7.5. `touches` — этап 0 (и повторные касания)
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| id | bigint PK | |
+| client_id | bigint FK null | иногда ещё нет карточки |
+| vehicle_id | bigint FK null | |
+| branch_id | bigint FK null | куда обратился |
+| channel | enum | call / whatsapp / site / walk_in / referral / other |
+| direction | enum | inbound / outbound |
+| subject | text null | жалоба / запрос |
+| outcome | enum null | recorded / callback / rejected / spam |
+| created_by | bigint FK users | |
+| occurred_at | timestamptz | |
+
+### 7.6. `appointments` — этап 1
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| id | bigint PK | |
+| branch_id | bigint FK | |
+| client_id | bigint FK | |
+| vehicle_id | bigint FK null | |
+| touch_id | bigint FK null | источник |
+| scheduled_at | timestamptz | слот |
+| service_request | text | «шумит подвеска», «ТО» |
+| status | enum | new / confirmed / arrived / no_show / cancelled / rescheduled |
+| rescheduled_from_id | bigint FK null | перенос |
+| created_by | bigint FK | |
+
+### 7.7. `visits` — этапы 2–4
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| id | bigint PK | |
+| branch_id | bigint FK | |
+| appointment_id | bigint FK null | walk-in без записи |
+| client_id | bigint FK | |
+| vehicle_id | bigint FK | |
+| stage | enum | intake / diagnosis / approval / done_for_wo / lost |
+| status | enum | waiting_intake / accepted / in_diagnosis / pending_approval / approved / lost / cancelled |
+| complaint | text null | со слов клиента |
+| diagnosis_summary | text null | |
+| estimate_amount | numeric null | предварительная смета |
+| approval_status | enum | pending / approved / rejected / thinking |
+| lost_reason | text null | дорого / к дилеру / … |
+| accepted_at | timestamptz null | |
+| approved_at | timestamptz null | |
+
+После `approved` можно создать **один или несколько** `work_orders` на этот визит (например: ЗН «подвеска», ЗН «окраска»).
+
+### 7.8. `work_orders` — этапы 5–8 (ось правды)
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| id | bigint PK | |
+| number | text unique | человекочитаемый № ЗН |
+| branch_id | bigint FK | **на каком СТО** |
+| visit_id | bigint FK null | **N ЗН → 1 визит**; индекс без UNIQUE |
+| client_id | bigint FK | |
+| vehicle_id | bigint FK | **какая машина в ремонте** |
+| title | text null | краткое имя наряда («Подвеска», «Окраска») |
+| status | work_order_status | см. §4 |
+| primary_assignee_id | bigint FK null | ответственный за весь этот ЗН |
+| assigned_by | bigint FK null | кто назначил (руководитель) |
+| assigned_at | timestamptz null | |
+| total_labor_amount | numeric | **кэш** Σ labor items |
+| total_parts_amount | numeric | **кэш** Σ part items |
+| total_amount | numeric | **кэш** Σ всех items (= labor + parts) |
+| is_warranty | bool | |
+| parent_work_order_id | bigint FK null | гарантия/рекламация от исходного |
+| urgency | enum | normal / high / tow |
+| notes | text null | |
+| ready_at | timestamptz null | |
+| delivered_at | timestamptz null | |
+| closed_at | timestamptz null | |
+
+Индексы: `(branch_id, status)`, `(visit_id)`, `(vehicle_id)`, `(primary_assignee_id)`, `(client_id)`.
+
+**Пересчёт кэша сумм** (сервисный слой при create/update/delete item):
+
+```text
+item.amount = qty * unit_price
+total_labor_amount = sum(amount) where item_type = labor
+total_parts_amount = sum(amount) where item_type = part
+total_amount = total_labor_amount + total_parts_amount
+```
+
+Не принимать `total_*` «с клиента» как источник правды — только из items.
+
+### 7.9. `work_order_items` — работы / позиции внутри наряда
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| id | bigint PK | |
+| work_order_id | bigint FK | |
+| title | text | «Замена колодок» |
+| description | text null | |
+| item_type | enum | labor / part |
+| qty | numeric | |
+| unit_price | numeric | цена единицы (скрыть от worker в API) |
+| amount | numeric | qty × unit_price (кэш строки) |
+| assignee_id | bigint FK null | исполнитель этой позиции |
+| status | enum | pending / assigned / waiting_parts / in_progress / done |
+| sort_order | int | |
+
+Руководитель: `PATCH` item → `assignee_id` + `status=assigned`; при необходимости поднимает шапку ЗН в `assigned`. После изменения qty/price/type — пересчёт кэша на ЗН.
+
+### 7.10. `payments` — этап 8 (касса)
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| id | bigint PK | |
+| work_order_id | bigint FK | |
+| branch_id | bigint FK | денормализация для кассы филиала |
+| amount | numeric | |
+| method | enum | cash / card / transfer / mixed |
+| paid_at | timestamptz | |
+| created_by | bigint FK | |
+| comment | text null | |
+
+Долг клиента: `work_orders.total_amount - sum(payments)` (view или поле в API).
+
+### 7.11. `tasks` — этап 9 + операционные касания
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| id | bigint PK | |
+| branch_id | bigint FK null | |
+| client_id | bigint FK null | |
+| vehicle_id | bigint FK null | |
+| work_order_id | bigint FK null | |
+| assignee_id | bigint FK | |
+| task_type | enum | callback / approve_extras / remind_service / pickup / escalation / other |
+| title | text | |
+| due_at | timestamptz null | |
+| status | enum | open / in_progress / done / cancelled |
+| created_by | bigint FK | |
+
+### 7.12. `work_order_status_history` (рекомендуется даже в lite)
+
+| Поле | Тип | Описание |
+|------|-----|----------|
+| id | bigint PK | |
+| work_order_id | bigint FK | |
+| from_status | text null | |
+| to_status | text | |
+| changed_by | bigint FK | |
+| note | text null | |
+| changed_at | timestamptz | |
+
+Нужно для аудита «кто назначил / когда ждали запчасть» и дашборда сроков.
+
+---
+
+## 8. Правила доступа (на уровне API, не отдельных таблиц)
+
+| Действие | director | branch_manager | worker |
+|----------|----------|----------------|--------|
+| Читать ЗН всех филиалов | ✓ | свой `branch_id` | где `assignee` = я (шапка или item) |
+| Менять статус ЗН / назначать | ✓ (редко) | ✓ свой филиал | только свои item-статусы выполнения |
+| Видеть `total_*` / payments | ✓ | ✓ | ✗ |
+| План/факт, дашборд сети | ✓ | свой филиал | только «мои наряды» |
+
+Фильтр по умолчанию в репозитории: `branch_id` / `assignee_id` от текущего user.
+
+### Идентификация в прототипе (`X-User-Id`)
+
+1. Клиент (React) шлёт заголовок `X-User-Id: <bigint>`.
+2. Dependency FastAPI: загрузить `User`, при отсутствии → 401.
+3. Все запросы читают `current_user.role` / `branch_id` для ACL.
+4. UI: переключатель роли = смена выбранного demo-user (разные id в seed).
+5. JWT не строим. Для демо достаточно; в проде заменить на нормальный auth без смены схемы ролей.
+
+---
+
+## 9. Что сознательно не моделируем в lite
+
+- Склад и резерв запчастей (только строка `part` в items).
+- Посты/боксы, нормочасы, полный прайс-лист.
+- Отдельная таблица «сделок» — воронка = visit stage + work_order status.
+- Мультивалюта, скидки сложные, зарплата мастеров.
+
+---
+
+## 10. Порядок реализации моделей (FastAPI)
+
+1. `Branch`, `User`  
+2. `Client`, `Vehicle`  
+3. `Touch`, `Appointment`, `Visit`  
+4. `WorkOrder`, `WorkOrderItem`, `WorkOrderStatusHistory`  
+5. `Payment`, `Task`  
+6. Dashboard-агрегации (SQL view или сервисные запросы)
+
+---
+
+## 11. Зафиксированные решения (до кода)
+
+| # | Решение | Как в БД / API |
+|---|---------|----------------|
+| 1 | **PK = BigInt** | Все PK/FK — `BIGINT` identity/serial. UUID не используем. |
+| 2 | **Сумма ЗН из items + кэш** | Цены на `work_order_items`; `work_orders.total_*` пересчитываются при изменении позиций. Много работ в одном ЗН → общая цена наряда. |
+| 3 | **1 visit → N work_orders** | `work_orders.visit_id` FK без UNIQUE. Масштабирование: разные мастера/цеха = разные ЗН на один визит. |
+| 4 | **Без JWT** | Идентификация через заголовок **`X-User-Id`**; роль и филиал из таблицы `users`. |
+
+---
+
+## 12. Рекомендации перед стартом разработки
+
+Критично не раздувать scope тестового (~8 ч продукт+прототип). Ниже — что стоит сделать сразу и что отложить.
+
+### Сделать в первой итерации кода
+
+1. **Seed-данные сразу** — 2–3 филиала, директор, по руководителю на филиал, 2–3 рабочих, клиенты с авто, 1–2 визита с несколькими ЗН, платежи, задачи. Без seed демо ролей мёртвое.
+2. **Один сервис пересчёта сумм ЗН** — единственное место `recalc_work_order_totals(wo_id)`; не дублировать формулу в роутерах.
+3. **Единый dependency `get_current_user`** + хелперы ACL (`assert_branch_access`, `strip_finance_for_worker`) — иначе роли разъедутся по эндпоинтам.
+4. **Pydantic-схемы с разными response** для worker vs manager (или `response_model` + фильтр полей) — финансы не должны протекать в JSON.
+5. **Статусы ЗН — явная state-machine** (dict допустимых переходов) — иначе UI и API начнут ставить «готов» из «создан».
+6. **Индексы из §7** с первого DDL — дашборд и списки ЗН по филиалу/исполнителю сразу упрутся без них.
+7. **CORS + прокси** React→API с пробросом `X-User-Id` — зафиксировать в README одной командой запуска.
+
+### Имеет смысл упростить в MVP UI
+
+- Не строить все 10 этапов воронки отдельными экранами: канбан по укрупнённым колонкам (Запись / Визит / ЗН в работе / Готов / Постсервис) + деталка сущности.
+- Walk-in: создавать `visit` без `appointment` — поле уже nullable.
+- Выдача визита: статус визита «закрыт по сервису», когда **все** связанные ЗН в `delivered`/`closed` (логика в сервисе, не отдельная таблица).
+
+### Риски из-за 1:N visit→WO (учесть в UI)
+
+- На карточке визита — список ЗН и сумма визита = Σ `total_amount` по ЗН.
+- Касса/оплата — **на уровне ЗН** (как в схеме); «оплатить весь визит» = несколько платежей или один платёж на выбранный ЗН (не усложнять split в MVP).
+- Рабочий видит только **свои** ЗН/позиции, даже если на визите есть чужой наряд (окраска vs подвеска).
+
+### Структура репозитория (предложение)
+
+```text
+backend/   # FastAPI, models, api, seed
+frontend/  # React
+BUSINESS.md
+ARCHITECTURE.md
+README.md
+```
+
+Docker Compose с PostgreSQL — сильно экономит время на Windows.
+
+### Документация для тестового
+
+- Короткая история решений (этот §11–12) + ссылка на чаты с ИИ.
+- В README: как переключать `X-User-Id`, какие id в seed соответствуют ролям.
+
+### Можно не делать до демо
+
+JWT, склад, прайс-справочник, файлы/фото, realtime, миграции «на все случаи» — одна начальная migration + seed достаточно.
+
+---
+
+*Документ парный к `BUSINESS.md`: продукт → эта схема. Решения §11 зафиксированы. Следующий шаг — SQLAlchemy-модели / DDL + seed.*
